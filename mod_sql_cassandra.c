@@ -607,6 +607,9 @@ static int exec_stmt(cmd_rec *cmd, db_conn_t *conn, char *text, char **errstr) {
   rs = cass_future_get_result(future);
   nrows = cass_result_row_count(rs);
   ncols = cass_result_column_count(rs);
+  pr_trace_msg(trace_channel, 9,
+    "executing '%s' resulted in %lu rows of %lu columns", text,
+    (unsigned long) nrows, (unsigned long) ncols);
 
   if (result_list == NULL) {
     result_ncols = ncols;
