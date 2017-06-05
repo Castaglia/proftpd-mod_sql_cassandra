@@ -71,6 +71,7 @@ typedef struct conn_entry_struct {
 
 static pool *conn_pool = NULL;
 static array_header *conn_cache = NULL;
+static CassConsistency cassandra_consistency = CASS_CONSISTENCY_LOCAL_QUORUM;
 
 #define CASSANDRA_TRACE_LEVEL	12
 static const char *trace_channel = "sql.cassandra";
@@ -1491,6 +1492,65 @@ static void sql_cassandra_mod_unload_ev(const void *event_data,
   }
 }
 
+/* Configuration handlers
+ */
+
+/* usage: SQLCassandraConsistency consistency */
+MODRET set_sqlcassandraconsistency(cmd_rec *cmd) {
+  CassConsistency consistency;
+  const char *consistency_str;
+  config_rec *c;
+
+  CHECK_ARGS(cmd, 1);
+  CHECK_CONF(cmd, CONF_ROOT|CONF_GLOBAL|CONF_VIRTUAL);
+
+  consistency_str = cmd->argv[0];
+
+  if (strcasecmp(consistency_str, "All") == 0) {
+    consistency = CASS_CONSISTENCY_ALL;
+
+  } else if (strcasecmp(consistency_str, "Any") == 0) {
+    consistency = CASS_CONSISTENCY_ANY;
+
+  } else if (strcasecmp(consistency_str, "EachQuorum") == 0 ||
+             strcasecmp(consistency_str, "EACH_QUORUM") == 0) {
+    consistency = CASS_CONSISTENCY_EACH_QUORUM;
+
+  } else if (strcasecmp(consistency_str, "LocalOne") == 0 ||
+             strcasecmp(consistency_str, "LOCAL_ONE") == 0) {
+    consistency = CASS_CONSISTENCY_LOCAL_ONE;
+
+  } else if (strcasecmp(consistency_str, "LocalQuorum") == 0 ||
+             strcasecmp(consistency_str, "LOCAL_QUORUM") == 0) {
+    consistency = CASS_CONSISTENCY_LOCAL_QUORUM;
+
+  } else if (strcasecmp(consistency_str, "One") == 0 ||
+             strcasecmp(consistency_str, "1") == 0) {
+    consistency = CASS_CONSISTENCY_ONE;
+
+  } else if (strcasecmp(consistency_str, "Quorum") == 0) {
+    consistency = CASS_CONSISTENCY_QUORUM;
+
+  } else if (strcasecmp(consistency_str, "Three") == 0 ||
+             strcasecmp(consistency_str, "3") == 0) {
+    consistency = CASS_CONSISTENCY_THREE;
+
+  } else if (strcasecmp(consistency_str, "Two") == 0 ||
+             strcasecmp(consistency_str, "2") == 0) {
+    consistency = CASS_CONSISTENCY_TWO;
+
+  } else {
+    CONF_ERROR(cmd, pstrcat(cmd->tmp_pool,
+      "unknown/supported Cassandra consistency: ", consistency_str, NULL));
+  }
+
+  c = add_config_param(cmd->argv[0], 1, NULL);
+  c->argv[0] = palloc(c->pool, sizeof(CassConsistency));
+  *((CassConsistency *) c->argv[0]) = consistency;
+
+  return PR_HANDLED(cmd);
+}
+
 /* Initialization routines
  */
 
@@ -1518,6 +1578,8 @@ static int sql_cassandra_init(void) {
 }
 
 static int sql_cassandra_sess_init(void) {
+  config_rec *c;
+
   if (conn_pool == NULL) {
     conn_pool = make_sub_pool(session.pool);
     pr_pool_tag(conn_pool, "Cassandra connection pool");
@@ -1528,11 +1590,26 @@ static int sql_cassandra_sess_init(void) {
       sizeof(conn_entry_t *));
   }
 
+  c = find_config(main_server->conf, CONF_PARAM, "SQLCassandraConsistency",
+    FALSE);
+  if (c != NULL) {
+    cassandra_consistency = *((CassConsistency *) c->argv[0]);
+  }
+
+  pr_trace_msg(trace_channel, 10, "using consistency level %s for statements",
+    cass_consistency_string(cassandra_consistency));
+
   return 0;
 }
 
 /* Module API tables
  */
+
+static conftable sql_cassandra_conftab[] = {
+  { "SQLCassandraConsistency",	set_sqlcassandraconsistency,	NULL },
+
+  { NULL, NULL, NULL }
+};
 
 module sql_cassandra_module = {
   NULL, NULL,
@@ -1544,7 +1621,7 @@ module sql_cassandra_module = {
   "sql_cassandra",
 
   /* Module configuration directive table */
-  NULL,
+  sql_cassandra_conftab,
 
   /* Module command handler table */
   NULL,
