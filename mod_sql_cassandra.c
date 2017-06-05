@@ -52,6 +52,11 @@ typedef struct db_conn_struct {
   const char *ssl_key_file;
   const char *ssl_ca_file;
 
+  /* Cassandra version. */
+  int cluster_major_version;
+  int cluster_minor_version;
+  int cluster_patch_version;
+
 } db_conn_t;
 
 typedef struct conn_entry_struct {
@@ -146,16 +151,35 @@ static int cassandra_timer_cb(CALLBACK_FRAME) {
 
 static void cassandra_log_cb(const CassLogMessage *msg, void *user_data) {
   const char *log_level;
+  int use_trace = TRUE, use_sqllog = FALSE;
 
   log_level = cass_log_level_string(msg->severity);
 
-  pr_trace_msg(trace_channel, 5, "%u.%03u [%s] (%s:%d:%s): %s",
-    (unsigned int) (msg->time_ms / 1000),
-    (unsigned int) (msg->time_ms % 1000), log_level, msg->file, msg->line,
-    msg->function, msg->message);
+  if (strcasecmp(log_level, "TRACE") == 0) {
+    /* cpp-driver's TRACE logging is a bit too verbose; only use if the
+     * trace level is quite high.
+     */
+    use_trace = FALSE;
 
-  if (strcasecmp(log_level, "TRACE") != 0 &&
-      strcasecmp(log_level, "DEBUG") != 0) {
+    if (pr_trace_get_level(trace_channel) >= 30) {
+      use_trace = TRUE;
+    }
+
+  } else if (strcasecmp(log_level, "DEBUG") == 0) {
+    use_trace = TRUE;
+
+  } else {
+    use_sqllog = TRUE;
+  }
+
+  if (use_trace) {
+    pr_trace_msg(trace_channel, 5, "%u.%03u [%s] (%s:%d:%s): %s",
+      (unsigned int) (msg->time_ms / 1000),
+      (unsigned int) (msg->time_ms % 1000), log_level, msg->file, msg->line,
+      msg->function, msg->message);
+  }
+
+  if (use_sqllog) {
     sql_log(DEBUG_FUNC, "%u.%03u [%s] (%s:%d:%s): %s",
       (unsigned int) (msg->time_ms / 1000),
       (unsigned int) (msg->time_ms % 1000), log_level, msg->file, msg->line,
@@ -389,6 +413,7 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
    *  cass_cluster_set_connection_idle_timeout(cluster, secs);
    */
 
+  conn->cluster = cluster;
   return 0;
 }
 
@@ -401,14 +426,18 @@ static int cassandra_cluster_free(db_conn_t *conn) {
   return 0;
 }
 
-static int cassandra_log_version(pool *p, const CassSession *sess) {
+static int cassandra_get_cluster_version(pool *p, db_conn_t *conn) {
   const CassSchemaMeta *schema;
   CassVersion version;
 
-  schema = cass_session_get_schema_meta(sess);
+  schema = cass_session_get_schema_meta((CassSession *) conn->session);
   version = cass_schema_meta_version(schema);
   sql_log(DEBUG_FUNC, "Cassandra cluster using version %d.%d.%d",
     version.major_version, version.minor_version, version.patch_version);
+
+  conn->cluster_major_version = version.major_version;
+  conn->cluster_minor_version = version.minor_version;
+  conn->cluster_patch_version = version.patch_version;
 
   cass_schema_meta_free((CassSchemaMeta *) schema);
   return 0;
@@ -448,9 +477,9 @@ static int cassandra_session_init(pool *p, db_conn_t *conn) {
   }
 
   cass_future_free(connect_future);
-  cassandra_log_version(p, sess);
-
   conn->session = sess;
+  cassandra_get_cluster_version(p, conn);
+
   return 0;
 }
 
@@ -504,7 +533,11 @@ static int cassandra_log_keyspaces(db_conn_t *conn) {
   CassFuture *future;
   CassError rc;
 
-  text = "SELECT keyspace FROM system.schema_keyspaces;";
+  /* Note: The particular query to use varies among the Cassandra versions;
+   * this will need to take that version into account.
+   */
+
+  text = "SELECT keyspace_name FROM system_schema.keyspaces;";
   stmt = cass_statement_new(text, 0);
 
   /* A consistency of ONE is required for the system keyspace; we are only
@@ -536,11 +569,11 @@ static int cassandra_log_keyspaces(db_conn_t *conn) {
       pr_signals_handle();
 
       row = cass_iterator_get_row(iter);
-      val = cass_row_get_column(row, 1);
+      val = cass_row_get_column(row, 0);
       cass_value_get_string(val, &text, &text_len);
 
       pr_trace_msg(trace_channel, CASSANDRA_TRACE_LEVEL,
-        " keyspace name: %.*s", (int) text_len, text);
+        " keyspace: %.*s", (int) text_len, text);
     }
 
     cass_iterator_free(iter);
@@ -579,11 +612,7 @@ static int exec_stmt(cmd_rec *cmd, db_conn_t *conn, char *text, char **errstr) {
    */
 
   stmt = cass_statement_new(text, 0);
-
-  /* XXX Make this configurable?  The default, per the DataStax docs,
-   * is now ONE rather than LOCAL_QUORUM.
-   */
-  cass_statement_set_consistency(stmt, CASS_CONSISTENCY_LOCAL_QUORUM);
+  cass_statement_set_consistency(stmt, cassandra_consistency);
 
   future = cass_session_execute((CassSession *) conn->session, stmt);
   cass_future_wait(future);
@@ -608,7 +637,7 @@ static int exec_stmt(cmd_rec *cmd, db_conn_t *conn, char *text, char **errstr) {
   nrows = cass_result_row_count(rs);
   ncols = cass_result_column_count(rs);
   pr_trace_msg(trace_channel, 9,
-    "executing '%s' resulted in %lu rows of %lu columns", text,
+    "executing '%s' resulted in row count %lu, column count %lu", text,
     (unsigned long) nrows, (unsigned long) ncols);
 
   if (result_list == NULL) {
@@ -630,12 +659,74 @@ static int exec_stmt(cmd_rec *cmd, db_conn_t *conn, char *text, char **errstr) {
 
     for (i = 0; i < ncols; i++) {
       const CassValue *val;
-      const char *text;
+      CassValueType val_type;
+      char *text = NULL;
       size_t textsz = 0;
 
-      val = cass_row_get_column(row, i + 1);
-      cass_value_get_string(val, &text, &textsz);
-      (*result_row)[i] = pstrndup(cmd->tmp_pool, text, textsz);
+      val = cass_row_get_column(row, i);
+      val_type = cass_value_type(val);
+      switch (val_type) {
+        case CASS_VALUE_TYPE_ASCII:
+        case CASS_VALUE_TYPE_TEXT:
+        case CASS_VALUE_TYPE_VARCHAR:
+          cass_value_get_string(val, (const char **) &text, &textsz);
+          break;
+
+        case CASS_VALUE_TYPE_BIGINT: {
+          cass_int64_t num;
+          size_t bufsz;
+
+          cass_value_get_int64(val, &num);
+          bufsz = 128;
+          text = pcalloc(cmd->tmp_pool, bufsz+1);
+          textsz = snprintf(text, bufsz, "%ld", (long int) num);
+          break;
+        }
+
+        case CASS_VALUE_TYPE_INT: {
+          cass_int32_t num;
+          size_t bufsz;
+
+          cass_value_get_int32(val, &num);
+          bufsz = 128;
+          text = pcalloc(cmd->tmp_pool, bufsz+1);
+          textsz = snprintf(text, bufsz, "%d", (int) num);
+          break;
+        }
+
+        case CASS_VALUE_TYPE_SMALL_INT: {
+          cass_int16_t num;
+          size_t bufsz;
+
+          cass_value_get_int16(val, &num);
+          bufsz = 128;
+          text = pcalloc(cmd->tmp_pool, bufsz+1);
+          textsz = snprintf(text, bufsz, "%d", (short) num);
+          break;
+        }
+
+        case CASS_VALUE_TYPE_TINY_INT: {
+          cass_int8_t num;
+          size_t bufsz;
+
+          cass_value_get_int8(val, &num);
+          bufsz = 128;
+          text = pcalloc(cmd->tmp_pool, bufsz+1);
+          textsz = snprintf(text, bufsz, "%c", (char) num);
+          break;
+        }
+
+        default:
+          sql_log(DEBUG_FUNC, "unknown/unsupported Cassandra value type: %d",
+            val_type);
+      }
+
+      if (text != NULL) {
+        (*result_row)[i] = pstrndup(cmd->tmp_pool, text, textsz);
+
+      } else {
+        (*result_row)[i] = pstrdup(cmd->tmp_pool, "");
+      }
     }
   }
 
@@ -1507,7 +1598,7 @@ MODRET set_sqlcassandraconsistency(cmd_rec *cmd) {
   CHECK_ARGS(cmd, 1);
   CHECK_CONF(cmd, CONF_ROOT|CONF_GLOBAL|CONF_VIRTUAL);
 
-  consistency_str = cmd->argv[0];
+  consistency_str = cmd->argv[1];
 
   if (strcasecmp(consistency_str, "All") == 0) {
     consistency = CASS_CONSISTENCY_ALL;
