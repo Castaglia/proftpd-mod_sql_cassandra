@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>ProFTPD module mod_sql_cassandra</title>
+</head>
+
+<body bgcolor=white>
+
+<hr><br>
+<center>
+<h2><b>ProFTPD module <code>mod_sql_cassandra</code></b></h2>
+</center>
+<hr><br>
+
+<p>
+XXX
+Cassandra, DataStax cpp-driver
+
+<p>
+This module is contained in the <code>mod_sql_cassandra.c</code> file for
+ProFTPD 1.3.<i>x</i>, and is not compiled by default.  Installation
+instructions are discussed <a href="#Installation">here</a>.
+
+<p>
+The most current version of <code>mod_sql_cassandra</code> can be found at:
+<pre>
+  <a href="https://github.com/Castaglia/proftpd-mod_sql_cassandra.git">https://github.com/Castaglia/proftpd-mod_sql_cassandra.git</a>
+</pre>
+
+<h2>Author</h2>
+<p>
+Please contact TJ Saunders &lt;tj <i>at</i> castaglia.org&gt; with any
+questions, concerns, or suggestions regarding this module.
+
+<h2>Directives</h2>
+<ul>
+  <li><a href="#SQLCassandraConsistency">SQLCassandraConsistency</a>
+</ul>
+
+<hr>
+<h3><a name="SQLCassandraConsistency">SQLCassandraConsistency</a></h3>
+<strong>Syntax:</strong> SQLConsistencyConsistency <em>consistency</em><br>
+<strong>Default:</strong> SQLConsistencyConsistency LocalQuorum<br>
+<strong>Context:</strong> server config, <code>&lt;VirtualHost&gt;</code>, <code>&lt;Global&gt;</code><br>
+<strong>Module:</strong> mod_sql_cassandra<br>
+<strong>Compatibility:</strong> 1.3.6rc2 and later
+
+<p>
+The <code>SQLCassandraConsistency</code> directive configures the
+<em>consistency</em> used when executing statements/queries on the Cassandra
+cluster. The default is "LocalQuorum".
+
+<p>
+<hr>
+<h2><a name="Installation">Installation</a></h2>
+The <code>mod_sql_cassandra</code> relies on the DataStax <a href="https://github.com/datastax/cpp-driver.git">cpp-driver</a> library.  Follow the usual steps
+for using contrib modules in ProFTPD, making sure to list <code>mod_sql</code>.
+
+<p>
+For example:
+<pre>
+  $ ./configure --with-modules=mod_sql:mod_sql_cassandra ...
+  $ make
+  $ make install
+</pre>
+
+<p>
+You may need to specify the location of the <code>cpp-driver</code> header and
+library files in your <code>configure</code> command, <i>e.g.</i>:
+<pre>
+  $ ./configure \
+    --with-modules=mod_sql:mod_sql_cassandra \
+    --with-includes=/usr/local/datastax-cpp/include \
+    --with-libraries=/usr/local/datastax-cpp/lib
+</pre>
+
+<p>
+<hr>
+<h2><a name="Usage">Usage</a></h2>
+
+<p>
+<b>When should <code>mod_sql_cassandra</code> be used?</b><br>
+
+logging
+clustered database
+
+<p>
+<b>Configuring <code>mod_sql_cassandra</code></b><br>
+For the most part, <code>mod_sql_cassandra</code> requires little configuration.
+
+* mention token-aware, latency-aware routing
+* mention default retry policy
+
+The one required bit of information is the
+<a href="mod_sql.html#SQLConnectInfo"><code>SQLConnectInfo</code></a> directive.
+This directive needs to contain the name of the stanza in your
+<code>odbc.ini</code> file which holds the configuration.  Using the example
+<code>odbc.ini</code> files above, you would need the following in your
+<code>proftpd.conf</code>:
+<pre>
+  # Tells mod_sql to use mod_sql_cassandra
+  SQLBackend cassandra
+
+  # Tells mod_sql_cassandra
+  SQLConnectInfo keyspace@127.0.0.1
+</pre>
+
+<p>
+<hr>
+<font size=2><b><i>
+&copy; Copyright 2017 TJ Saunders<br>
+ All Rights Reserved<br>
+</i></b></font>
+<hr>
+
+</body>
+</html>
