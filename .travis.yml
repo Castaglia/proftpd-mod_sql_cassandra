@@ -34,7 +34,7 @@ script:
   - cd cpp-driver/build
   - cmake ..
   - make
-  - make install
+  - sudo make install
   - cd ../../
   - git clone --depth 10 https://github.com/proftpd/proftpd.git
   - cp mod_sql_cassandra.c proftpd/contrib/
