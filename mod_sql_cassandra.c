@@ -347,7 +347,6 @@ static int cassandra_ssl_load_client_key(pool *p, CassSsl *ssl,
 }
 
 static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
-  int res;
   CassCluster *cluster;
   CassRetryPolicy *default_policy, *logging_policy;
 
@@ -359,19 +358,31 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
   }
 
   if (conn->ssl_ca_file != NULL) {
+    int res, init_openssl = TRUE;
     CassSsl *ssl;
 
-    /* The mod_sql module already uses OpenSSL, so we do not need to initialize
-     * it again.
+    /* If specific other modules are present, they will already initialize
+     * OpenSSL properly; otherwise, we have to do it here.
      */
-    ssl = cass_ssl_new_no_lib_init();
+    if (pr_module_get("mod_auth_otp.c") != NULL ||
+        pr_module_get("mod_digest.c") != NULL ||
+        pr_module_get("mod_sftp.c") != NULL ||
+        pr_module_get("mod_sql_passwd.c") != NULL ||
+        pr_module_get("mod_tls.c") != NULL) {
+      init_openssl = FALSE;
+    }
 
-    if (conn->ssl_ca_file != NULL) {
-      res = cassandra_ssl_load_ca_cert(p, ssl, conn->ssl_ca_file);
-      if (res < 0) {
-        sql_log(DEBUG_FUNC, "error loading ssl-ca '%s': %s", conn->ssl_ca_file,
-          strerror(errno));
-      }
+    if (init_openssl) {
+      ssl = cass_ssl_new();
+
+    } else {
+      ssl = cass_ssl_new_no_lib_init();
+    }
+
+    res = cassandra_ssl_load_ca_cert(p, ssl, conn->ssl_ca_file);
+    if (res < 0) {
+      sql_log(DEBUG_FUNC, "error loading ssl-ca '%s': %s", conn->ssl_ca_file,
+        strerror(errno));
     }
 
     if (conn->ssl_cert_file != NULL) {
