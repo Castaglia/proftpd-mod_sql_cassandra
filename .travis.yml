@@ -4,6 +4,8 @@ compiler:
   - gcc
   - clang
 
+sudo: required
+
 install:
   - sudo apt-get update -qq
   # for unit tests
