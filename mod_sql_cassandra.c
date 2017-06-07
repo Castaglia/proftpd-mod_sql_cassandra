@@ -46,6 +46,7 @@ typedef struct db_conn_struct {
   const char *pass;
   const CassCluster *cluster;
   const CassSession *session;
+  CassTimestampGen *timestamps;
 
   /* For configuring the SSL/TLS session to Cassandra. */
   const char *ssl_cert_file;
@@ -77,9 +78,13 @@ typedef struct conn_entry_struct {
 /* Send TCP keepalive probes after this many seconds of inactivity. */
 #define CASSANDRA_TCP_KEEPALIVE_DELAY_SECS	300
 
+/* options */
+#define CASSANDRA_OPT_NO_CLIENT_SIDE_TIMESTAMPS		0x0001
+
 static pool *conn_pool = NULL;
 static array_header *conn_cache = NULL;
 static CassConsistency cassandra_consistency = CASS_CONSISTENCY_LOCAL_QUORUM;
+static unsigned long cassandra_opts = 0UL;
 
 #define CASSANDRA_TRACE_LEVEL	12
 static const char *trace_channel = "sql.cassandra";
@@ -363,6 +368,11 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
   cass_cluster_set_tcp_keepalive(cluster, cass_true,
     CASSANDRA_TCP_KEEPALIVE_DELAY_SECS);
 
+  if (!(cassandra_opts & CASSANDRA_OPT_NO_CLIENT_SIDE_TIMESTAMPS)) {
+    conn->timestamps = cass_timestamp_gen_monotonic_new();
+    cass_cluster_set_timestamp_gen(cluster, conn->timestamps);
+  }
+
   if (conn->user != NULL) {
     cass_cluster_set_credentials(cluster, conn->user, conn->pass);
   }
@@ -442,6 +452,11 @@ static int cassandra_cluster_free(db_conn_t *conn) {
   if (conn->cluster != NULL) {
     cass_cluster_free((CassCluster *) conn->cluster);
     conn->cluster = NULL;
+  }
+
+  if (conn->timestamps != NULL) {
+    cass_timestamp_gen_free(conn->timestamps);
+    conn->timestamps = NULL;
   }
 
   return 0;
@@ -989,7 +1004,7 @@ MODRET sql_cassandra_define_conn(cmd_rec *cmd) {
     return PR_ERROR_MSG(cmd, MOD_SQL_CASSANDRA_VERSION, "uninitialized module");
   }
 
-  conn = (db_conn_t *) palloc(conn_pool, sizeof(db_conn_t));
+  conn = (db_conn_t *) pcalloc(conn_pool, sizeof(db_conn_t));
 
   name = pstrdup(conn_pool, cmd->argv[0]);
   conn->user = pstrdup(conn_pool, cmd->argv[1]);
@@ -1666,6 +1681,36 @@ MODRET set_sqlcassandraconsistency(cmd_rec *cmd) {
   return PR_HANDLED(cmd);
 }
 
+/* usage: SQLCassandraOptions opt1 opt2 ... */
+MODRET set_sqlcassandraoptions(cmd_rec *cmd) {
+  config_rec *c = NULL;
+  register unsigned int i = 0;
+  unsigned long opts = 0UL;
+
+  if (cmd->argc-1 == 0) {
+    CONF_ERROR(cmd, "wrong number of parameters");
+  }
+
+  CHECK_CONF(cmd, CONF_ROOT|CONF_VIRTUAL|CONF_GLOBAL);
+
+  c = add_config_param(cmd->argv[0], 1, NULL);
+
+  for (i = 1; i < cmd->argc; i++) {
+    if (strcmp(cmd->argv[i], "NoClientSideTimestamps") == 0) {
+      opts |= CASSANDRA_OPT_NO_CLIENT_SIDE_TIMESTAMPS;
+
+    } else {
+      CONF_ERROR(cmd, pstrcat(cmd->tmp_pool, ": unknown SQLCassandraOption '",
+        cmd->argv[i], "'", NULL));
+    }
+  }
+
+  c->argv[0] = pcalloc(c->pool, sizeof(unsigned long));
+  *((unsigned long *) c->argv[0]) = opts;
+
+  return PR_HANDLED(cmd);
+}
+
 /* Initialization routines
  */
 
@@ -1714,6 +1759,18 @@ static int sql_cassandra_sess_init(void) {
   pr_trace_msg(trace_channel, 10, "using consistency level %s for statements",
     cass_consistency_string(cassandra_consistency));
 
+  c = find_config(main_server->conf, CONF_PARAM, "SQLCassandraOptions", FALSE);
+  while (c != NULL) {
+    unsigned long opts = 0;
+
+    pr_signals_handle();
+
+    opts = *((unsigned long *) c->argv[0]);
+    cassandra_opts |= opts;
+
+    c = find_config_next(c, c->next, CONF_PARAM, "SQLCassandraOptions", FALSE);
+  }
+
   return 0;
 }
 
@@ -1722,6 +1779,7 @@ static int sql_cassandra_sess_init(void) {
 
 static conftable sql_cassandra_conftab[] = {
   { "SQLCassandraConsistency",	set_sqlcassandraconsistency,	NULL },
+  { "SQLCassandraOptions",	set_sqlcassandraoptions,	NULL },
 
   { NULL, NULL, NULL }
 };
