@@ -79,17 +79,24 @@ typedef struct conn_entry_struct {
 /* Send TCP keepalive probes after this many seconds of inactivity. */
 #define CASSANDRA_TCP_KEEPALIVE_DELAY_SECS	300
 
-/* options */
+/* SQLCassandraOptions */
 #define CASSANDRA_OPT_NO_CLIENT_SIDE_TIMESTAMPS		0x0001
+
+/* SQLCassandraTimeouts */
+#define CASSANDRA_DEFAULT_CONNECT_TIMEOUT		5000
+#define CASSANDRA_DEFAULT_REQUEST_TIMEOUT		12000
 
 static pool *conn_pool = NULL;
 static array_header *conn_cache = NULL;
 static CassConsistency cassandra_consistency = CASS_CONSISTENCY_LOCAL_QUORUM;
 static unsigned long cassandra_opts = 0UL;
+static unsigned int cassandra_connect_timeout = CASSANDRA_DEFAULT_CONNECT_TIMEOUT;
+static unsigned int cassandra_request_timeout = CASSANDRA_DEFAULT_REQUEST_TIMEOUT;
 
 #define CASSANDRA_TRACE_LEVEL	12
 static const char *trace_channel = "sql.cassandra";
 
+static int sql_cassandra_sess_init(void);
 MODRET sql_cassandra_close(cmd_rec *);
 
 static conn_entry_t *cassandra_get_conn(char *name) {
@@ -382,6 +389,10 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
 
   /* Disable hostname resolution (reverse IP address lookups). */
   cass_cluster_set_use_hostname_resolution(cluster, cass_false);
+
+  /* Timeouts */
+  cass_cluster_set_connect_timeout(cluster, cassandra_connect_timeout);
+  cass_cluster_set_request_timeout(cluster, cassandra_request_timeout);
 
   if (!(cassandra_opts & CASSANDRA_OPT_NO_CLIENT_SIDE_TIMESTAMPS)) {
     conn->timestamps = cass_timestamp_gen_monotonic_new();
@@ -1702,6 +1713,27 @@ static void sql_cassandra_mod_unload_ev(const void *event_data,
   }
 }
 
+static void sql_cassandra_sess_reinit_ev(const void *event_data,
+    void *user_data) {
+  int res;
+
+  /* A HOST command changed the main_server pointer; reinitialize ourselves. */
+  pr_event_unregister(&sql_cassandra_module, "core.session-reinit",
+    sql_cassandra_sess_reinit_ev);
+
+  /* Reset state */
+  cassandra_consistency = CASS_CONSISTENCY_LOCAL_QUORUM;
+  cassandra_opts = 0UL;
+  cassandra_connect_timeout = CASSANDRA_DEFAULT_CONNECT_TIMEOUT;
+  cassandra_request_timeout = CASSANDRA_DEFAULT_REQUEST_TIMEOUT;
+
+  res = sql_cassandra_sess_init();
+  if (res < 0) {
+    pr_session_disconnect(&sql_cassandra_module,
+      PR_SESS_DISCONNECT_SESSION_INIT_FAILED, NULL);
+  }
+}
+
 /* Configuration handlers
  */
 
@@ -1763,8 +1795,8 @@ MODRET set_sqlcassandraconsistency(cmd_rec *cmd) {
 
 /* usage: SQLCassandraOptions opt1 opt2 ... */
 MODRET set_sqlcassandraoptions(cmd_rec *cmd) {
-  config_rec *c = NULL;
   register unsigned int i = 0;
+  config_rec *c = NULL;
   unsigned long opts = 0UL;
 
   if (cmd->argc-1 == 0) {
@@ -1787,6 +1819,26 @@ MODRET set_sqlcassandraoptions(cmd_rec *cmd) {
 
   c->argv[0] = pcalloc(c->pool, sizeof(unsigned long));
   *((unsigned long *) c->argv[0]) = opts;
+
+  return PR_HANDLED(cmd);
+}
+
+/* usage: SQLCassandraTimeoutConnect/Request ms */
+MODRET set_sqlcassandratimeout(cmd_rec *cmd) {
+  config_rec *c = NULL;
+  int ms = 0UL;
+
+  CHECK_ARGS(cmd, 1);
+  CHECK_CONF(cmd, CONF_ROOT|CONF_VIRTUAL|CONF_GLOBAL);
+
+  ms = atoi((char *) cmd->argv[1]);
+  if (ms <= 0) {
+    CONF_ERROR(cmd, "invalid parameter value");
+  }
+
+  c = add_config_param(cmd->argv[0], 1, NULL);
+  c->argv[0] = pcalloc(c->pool, sizeof(unsigned int));
+  *((unsigned int *) c->argv[0]) = ms;
 
   return PR_HANDLED(cmd);
 }
@@ -1820,6 +1872,9 @@ static int sql_cassandra_init(void) {
 static int sql_cassandra_sess_init(void) {
   config_rec *c;
 
+  pr_event_register(&sql_cassandra_module, "core.session-reinit",
+    sql_cassandra_sess_reinit_ev, NULL);
+
   if (conn_pool == NULL) {
     conn_pool = make_sub_pool(session.pool);
     pr_pool_tag(conn_pool, "Cassandra connection pool");
@@ -1838,6 +1893,22 @@ static int sql_cassandra_sess_init(void) {
 
   pr_trace_msg(trace_channel, 10, "using consistency level %s for statements",
     cass_consistency_string(cassandra_consistency));
+
+  c = find_config(main_server->conf, CONF_PARAM, "SQLCassandraTimeoutConnect",
+    FALSE);
+  if (c != NULL) {
+    cassandra_connect_timeout = *((unsigned int *) c->argv[0]);
+  }
+
+  c = find_config(main_server->conf, CONF_PARAM, "SQLCassandraTimeoutRequest",
+    FALSE);
+  if (c != NULL) {
+    cassandra_request_timeout = *((unsigned int *) c->argv[0]);
+  }
+
+  pr_trace_msg(trace_channel, 10,
+    "using connect timeout %u ms, request timeout %u ms",
+    cassandra_connect_timeout, cassandra_request_timeout);
 
   c = find_config(main_server->conf, CONF_PARAM, "SQLCassandraOptions", FALSE);
   while (c != NULL) {
@@ -1860,6 +1931,8 @@ static int sql_cassandra_sess_init(void) {
 static conftable sql_cassandra_conftab[] = {
   { "SQLCassandraConsistency",	set_sqlcassandraconsistency,	NULL },
   { "SQLCassandraOptions",	set_sqlcassandraoptions,	NULL },
+  { "SQLCassandraTimeoutConnect", set_sqlcassandratimeout,	NULL },
+  { "SQLCassandraTimeoutRequest", set_sqlcassandratimeout,	NULL },
 
   { NULL, NULL, NULL }
 };
