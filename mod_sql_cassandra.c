@@ -41,6 +41,7 @@ module sql_cassandra_module;
 
 typedef struct db_conn_struct {
   const char *seeds;
+  int port;
   const char *keyspace;
   const char *user;
   const char *pass;
@@ -361,12 +362,19 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
   cluster = cass_cluster_new();
   cass_cluster_set_contact_points(cluster, conn->seeds);
 
+  if (conn->port > 0) {
+    cass_cluster_set_port(cluster, conn->port);
+  }
+
   /* Ensure that Nagle's algorithm is disabled. */
   cass_cluster_set_tcp_nodelay(cluster, cass_true);
 
   /* Enable TCP keepalives. */
   cass_cluster_set_tcp_keepalive(cluster, cass_true,
     CASSANDRA_TCP_KEEPALIVE_DELAY_SECS);
+
+  /* Disable hostname resolution (reverse IP address lookups). */
+  cass_cluster_set_use_hostname_resolution(cluster, cass_false);
 
   if (!(cassandra_opts & CASSANDRA_OPT_NO_CLIENT_SIDE_TIMESTAMPS)) {
     conn->timestamps = cass_timestamp_gen_monotonic_new();
@@ -421,7 +429,14 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
       }
     }
 
+    /* Note that since we want to avoid any kind of DNS resolution within
+     * a chroot, we only give cpp-driver IP addresses, AND disable hostname
+     * solution.  This, in turns, means that we cannot easily verify the
+     * server certificate using DNS hostname comparisons with CN/SANs.
+     * Thus we ONLY use VERIFY_PEER_CERT.
+     */
     cass_ssl_set_verify_flags(ssl, CASS_SSL_VERIFY_PEER_CERT);
+
     cass_cluster_set_ssl(cluster, ssl);
     cass_ssl_free(ssl);
   }
@@ -977,10 +992,12 @@ MODRET sql_cassandra_cleanup(cmd_rec *cmd) {
 }
 
 MODRET sql_cassandra_define_conn(cmd_rec *cmd) {
-  char *name = NULL, *info = NULL, *ptr;
+  register unsigned int i;
+  char *name = NULL, *info = NULL, *seed_list = NULL, *ptr, *ptr2;
   const char *ssl_cert_file = NULL, *ssl_key_file = NULL, *ssl_ca_file = NULL;
   conn_entry_t *entry = NULL;
   db_conn_t *conn = NULL; 
+  array_header *seeds = NULL;
 
   sql_log(DEBUG_FUNC, "%s", "entering \tcassandra cmd_defineconnection");
 
@@ -1022,7 +1039,63 @@ MODRET sql_cassandra_define_conn(cmd_rec *cmd) {
     return PR_ERROR_MSG(cmd, MOD_SQL_CASSANDRA_VERSION, errstr);
   }
 
-  conn->seeds = pstrdup(conn_pool, ptr + 1);
+  seed_list = pstrdup(cmd->tmp_pool, ptr + 1);
+
+  /* Check for an explicit port number. */
+  ptr2 = strrchr(seed_list, ':');
+  if (ptr2 != NULL) {
+    int portno;
+
+    *ptr2 = '\0';
+
+    portno = atoi(ptr2 + 1);
+    if (portno > 0) {
+      conn->port = portno;
+
+    } else {
+      pr_trace_msg(trace_channel, 3, "ignoring invalid port '%s'", ptr2 + 1);
+    }
+  }
+
+  /* We MAY have DNS names as seeds, not IP addresses.  And cpp-driver MAY
+   * need to re-resolve these seeds after an e.g. broken connection.  And
+   * we MAY be operating in a chroot, when such DNS resolution will not work
+   * as expected.
+   *
+   * Thus we resolve any seeds now to their IP addresses, and only give IP
+   * address seeds to cpp-driver.
+   */
+
+  seeds = pr_str_text_to_array(cmd->tmp_pool, seed_list, ',');
+  seed_list = "";
+  for (i = 0; i < seeds->nelts; i++) {
+    const char *ip_str;
+    char *seed;
+    const pr_netaddr_t *addr;
+
+    seed = ((char **) seeds->elts)[i];
+
+    addr = pr_netaddr_get_addr(cmd->tmp_pool, seed, NULL);
+    if (addr != NULL) {
+      ip_str = pr_netaddr_get_ipstr(addr);
+      pr_trace_msg(trace_channel, 9, "resolved seed '%s' to IP address %s",
+        seed, ip_str);
+
+    } else {
+      pr_trace_msg(trace_channel, 3, "error resolving seed '%s': %s", seed,
+        strerror(errno));
+      ip_str = seed;
+    }
+
+    if (i > 0) {
+      seed_list = pstrcat(cmd->tmp_pool, seed_list, ",", ip_str, NULL);
+
+    } else {
+      seed_list = pstrdup(cmd->tmp_pool, ip_str);
+    }
+  }
+
+  conn->seeds = pstrdup(conn_pool, seed_list);
   *ptr = '\0';
   conn->keyspace = info;
 
