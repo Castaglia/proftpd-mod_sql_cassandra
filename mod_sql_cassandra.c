@@ -160,9 +160,10 @@ static int cassandra_timer_cb(CALLBACK_FRAME) {
 
 static void cassandra_log_cb(const CassLogMessage *msg, void *user_data) {
   const char *log_level;
-  int use_trace = TRUE, use_sqllog = FALSE;
+  int trace_level, use_trace = TRUE, use_sqllog = FALSE;
 
   log_level = cass_log_level_string(msg->severity);
+  trace_level = pr_trace_get_level(trace_channel);
 
   if (strcasecmp(log_level, "TRACE") == 0) {
     /* cpp-driver's TRACE logging is a bit too verbose; only use if the
@@ -170,7 +171,7 @@ static void cassandra_log_cb(const CassLogMessage *msg, void *user_data) {
      */
     use_trace = FALSE;
 
-    if (pr_trace_get_level(trace_channel) >= 30) {
+    if (trace_level >= 30) {
       use_trace = TRUE;
     }
 
@@ -182,17 +183,23 @@ static void cassandra_log_cb(const CassLogMessage *msg, void *user_data) {
   }
 
   if (use_trace) {
-    pr_trace_msg(trace_channel, 5, "%u.%03u [%s] (%s:%d:%s): %s",
-      (unsigned int) (msg->time_ms / 1000),
-      (unsigned int) (msg->time_ms % 1000), log_level, msg->file, msg->line,
-      msg->function, msg->message);
+    if (trace_level < 25) {
+      pr_trace_msg(trace_channel, 5, "%u.%03u [%s]: %s",
+        (unsigned int) (msg->time_ms / 1000),
+        (unsigned int) (msg->time_ms % 1000), log_level, msg->message);
+
+    } else {
+      pr_trace_msg(trace_channel, 5, "%u.%03u [%s] (%s:%d:%s): %s",
+        (unsigned int) (msg->time_ms / 1000),
+        (unsigned int) (msg->time_ms % 1000), log_level, msg->file, msg->line,
+        msg->function, msg->message);
+    }
   }
 
   if (use_sqllog) {
-    sql_log(DEBUG_FUNC, "%u.%03u [%s] (%s:%d:%s): %s",
+    sql_log(DEBUG_FUNC, "%u.%03u [%s]: %s",
       (unsigned int) (msg->time_ms / 1000),
-      (unsigned int) (msg->time_ms % 1000), log_level, msg->file, msg->line,
-      msg->function, msg->message);
+      (unsigned int) (msg->time_ms % 1000), log_level, msg->message);
   }
 }
 
