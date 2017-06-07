@@ -158,8 +158,9 @@ This directive needs to contain the name of the stanza in your
   # Tells mod_sql to use mod_sql_cassandra
   SQLBackend cassandra
 
-  # Tells mod_sql_cassandra
-  SQLConnectInfo keyspace@127.0.0.1
+  # Tells mod_sql_cassandra to connect to localhost, port 19042, and use the
+  # 'proftpd' keyspace.
+  SQLConnectInfo proftpd@127.0.0.1:19042
 </pre>
 
 <p>
