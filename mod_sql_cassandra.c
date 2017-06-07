@@ -72,7 +72,10 @@ typedef struct conn_entry_struct {
 
 } conn_entry_t;
 
-#define DEF_CONN_POOL_SIZE	10
+#define CASSANDRA_CONN_POOL_SIZE		10
+
+/* Send TCP keepalive probes after this many seconds of inactivity. */
+#define CASSANDRA_TCP_KEEPALIVE_DELAY_SECS	300
 
 static pool *conn_pool = NULL;
 static array_header *conn_cache = NULL;
@@ -352,6 +355,13 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
 
   cluster = cass_cluster_new();
   cass_cluster_set_contact_points(cluster, conn->seeds);
+
+  /* Ensure that Nagle's algorithm is disabled. */
+  cass_cluster_set_tcp_nodelay(cluster, cass_true);
+
+  /* Enable TCP keepalives. */
+  cass_cluster_set_tcp_keepalive(cluster, cass_true,
+    CASSANDRA_TCP_KEEPALIVE_DELAY_SECS);
 
   if (conn->user != NULL) {
     cass_cluster_set_credentials(cluster, conn->user, conn->pass);
@@ -1342,7 +1352,7 @@ MODRET sql_cassandra_prepare(cmd_rec *cmd) {
   conn_pool = (pool *) cmd->argv[0];
 
   if (conn_cache == NULL) {
-    conn_cache = make_array(conn_pool, DEF_CONN_POOL_SIZE,
+    conn_cache = make_array(conn_pool, CASSANDRA_CONN_POOL_SIZE,
       sizeof(conn_entry_t *));
   }
 
@@ -1691,8 +1701,8 @@ static int sql_cassandra_sess_init(void) {
   }
 
   if (conn_cache == NULL) {
-    conn_cache = make_array(make_sub_pool(session.pool), DEF_CONN_POOL_SIZE,
-      sizeof(conn_entry_t *));
+    conn_cache = make_array(make_sub_pool(session.pool),
+      CASSANDRA_CONN_POOL_SIZE, sizeof(conn_entry_t *));
   }
 
   c = find_config(main_server->conf, CONF_PARAM, "SQLCassandraConsistency",
