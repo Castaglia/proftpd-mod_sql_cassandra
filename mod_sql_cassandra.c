@@ -191,9 +191,10 @@ static void cassandra_log_cb(const CassLogMessage *msg, void *user_data) {
 
   if (use_trace) {
     if (trace_level < 25) {
-      pr_trace_msg(trace_channel, 5, "%u.%03u [%s]: %s",
+      pr_trace_msg(trace_channel, 5, "%u.%03u [%s] (%s:%d): %s",
         (unsigned int) (msg->time_ms / 1000),
-        (unsigned int) (msg->time_ms % 1000), log_level, msg->message);
+        (unsigned int) (msg->time_ms % 1000), log_level, msg->file, msg->line,
+        msg->message);
 
     } else {
       pr_trace_msg(trace_channel, 5, "%u.%03u [%s] (%s:%d:%s): %s",
