@@ -1012,7 +1012,7 @@ MODRET sql_cassandra_cleanup(cmd_rec *cmd) {
 
 MODRET sql_cassandra_define_conn(cmd_rec *cmd) {
   register unsigned int i;
-  char *name = NULL, *info = NULL, *seed_list = NULL, *ptr, *ptr2;
+  char *name = NULL, *info = NULL, *seed_list = NULL, *ptr, *ptr2, *ptr3;
   const char *ssl_cert_file = NULL, *ssl_key_file = NULL, *ssl_ca_file = NULL;
   conn_entry_t *entry = NULL;
   db_conn_t *conn = NULL; 
@@ -1060,19 +1060,28 @@ MODRET sql_cassandra_define_conn(cmd_rec *cmd) {
 
   seed_list = pstrdup(cmd->tmp_pool, ptr + 1);
 
-  /* Check for an explicit port number. */
+  /* Check for an explicit port number, making sure to handle any IPv6 address
+   * syntax.  To do this, we also check for a ']' character.  If there is none,
+   * or if it appears before the ':' we found, then it's a legitimate explicit
+   * port specification.
+   */
   ptr2 = strrchr(seed_list, ':');
+  ptr3 = strrchr(seed_list, ']');
+
   if (ptr2 != NULL) {
-    int portno;
+    if (ptr3 == NULL ||
+        ptr3 < ptr2) {
+      int portno;
 
-    *ptr2 = '\0';
+      *ptr2 = '\0';
 
-    portno = atoi(ptr2 + 1);
-    if (portno > 0) {
-      conn->port = portno;
+      portno = atoi(ptr2 + 1);
+      if (portno > 0) {
+        conn->port = portno;
 
-    } else {
-      pr_trace_msg(trace_channel, 3, "ignoring invalid port '%s'", ptr2 + 1);
+      } else {
+        pr_trace_msg(trace_channel, 3, "ignoring invalid port '%s'", ptr2 + 1);
+      }
     }
   }
 
@@ -1090,9 +1099,19 @@ MODRET sql_cassandra_define_conn(cmd_rec *cmd) {
   for (i = 0; i < seeds->nelts; i++) {
     const char *ip_str;
     char *seed;
+    size_t seed_len;
     const pr_netaddr_t *addr;
 
     seed = ((char **) seeds->elts)[i];
+    seed_len = strlen(seed);
+
+    /* Watch for IPv6 addresses; the short possible one is "[::]". */
+    if (seed_len >= 4) {
+      if (seed[0] == '[' &&
+          seed[seed_len-1] == ']') {
+        seed = pstrndup(cmd->tmp_pool, seed + 1, seed_len - 2);
+      }
+    }
 
     addr = pr_netaddr_get_addr(cmd->tmp_pool, seed, NULL);
     if (addr != NULL) {
