@@ -201,6 +201,15 @@ This directive needs to contain the name of the stanza in your
   # Tells mod_sql_cassandra to connect to localhost, port 19042, and use the
   # 'proftpd' keyspace.
   SQLConnectInfo proftpd@127.0.0.1:19042
+
+  # Using multiple IPv4 addresses
+  SQLConnectInfo proftpd@192.168.1.100,192.168.2.100:19042
+
+  # Using an IPv6 address
+  SQLConnectInfo proftpd@[::1]:19042
+
+  # Using multiple IPv6 addresses
+  SQLConnectInfo proftpd@[::ffff:192.168.1.100],[:ffff:192.168.2.100]:19042
 </pre>
 
 <p>
