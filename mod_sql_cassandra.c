@@ -86,6 +86,10 @@ typedef struct conn_entry_struct {
 #define CASSANDRA_DEFAULT_CONNECT_TIMEOUT		5000
 #define CASSANDRA_DEFAULT_REQUEST_TIMEOUT		12000
 
+/* Connection retry constants */
+#define CASSANDRA_CONNECT_MAX_RETRIES			3
+#define CASSANDRA_CONNECT_RETRY_DELAY_SECS		2
+
 static pool *conn_pool = NULL;
 static array_header *conn_cache = NULL;
 static CassConsistency cassandra_consistency = CASS_CONSISTENCY_LOCAL_QUORUM;
@@ -517,6 +521,7 @@ static int cassandra_session_init(pool *p, db_conn_t *conn) {
   CassSession *sess;
   CassFuture *connect_future;
   CassError rc;
+  unsigned int nattempts = 0;
 
   if (conn->cluster == NULL) {
     errno = EINVAL;
@@ -528,20 +533,41 @@ static int cassandra_session_init(pool *p, db_conn_t *conn) {
   }
 
   sess = cass_session_new();
+
+  nattempts++;
   connect_future = cass_session_connect_keyspace(sess, conn->cluster,
     conn->keyspace);
   cass_future_wait(connect_future);
+
   rc = cass_future_error_code(connect_future);
-  if (rc != CASS_OK) {
+  while (rc != CASS_OK) {
     const char *error_text;
     size_t error_textlen;
 
+    pr_signals_handle();
+
     cass_future_error_message(connect_future, &error_text, &error_textlen);
     sql_log(DEBUG_WARN, MOD_SQL_CASSANDRA_VERSION
-      ": error connecting to Cassandra using keyspace %s: %.*s", conn->keyspace,
-      (int) error_textlen, error_text);
+      ": error connecting to Cassandra (attempt #%u) using keyspace %s: %.*s",
+      nattempts, conn->keyspace, (int) error_textlen, error_text);
 
     cass_future_free(connect_future);
+
+    /* Retry on NO_HOSTS_AVAILABLE errors. */
+    if (rc == CASS_ERROR_LIB_NO_HOSTS_AVAILABLE &&
+        nattempts <= CASSANDRA_CONNECT_MAX_RETRIES) {
+
+      /* Delay for a fixed interval before retrying. */
+      pr_timer_sleep(CASSANDRA_CONNECT_RETRY_DELAY_SECS);
+
+      nattempts++;
+      connect_future = cass_session_connect_keyspace(sess, conn->cluster,
+        conn->keyspace);
+      cass_future_wait(connect_future);
+      rc = cass_future_error_code(connect_future);
+      continue;
+    }
+
     errno = EPERM;
     return -1;
   }
