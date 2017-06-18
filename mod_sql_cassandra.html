@@ -6,7 +6,7 @@
 
 <body bgcolor=white>
 
-<hr><br>
+<hr>
 <center>
 <h2><b>ProFTPD module <code>mod_sql_cassandra</code></b></h2>
 </center>
@@ -177,23 +177,27 @@ library files in your <code>configure</code> command, <i>e.g.</i>:
 
 <p>
 <b>When should <code>mod_sql_cassandra</code> be used?</b><br>
-
-logging
-clustered database
+Cassandra is a NoSQL database, which makes it better suited for some use
+cases more than others.  If you find yourself in need of a database that
+needs to score horizontally, with built-in clustering and partitioning of data,
+then Cassandra might be a good fit for you.
 
 <p>
-<b>Configuring <code>mod_sql_cassandra</code></b><br>
-For the most part, <code>mod_sql_cassandra</code> requires little configuration.
+You could even still use a relational database like MySQL for your user
+authentication needs, combined with Cassandra for your database logging.  The
+<code>mod_sql_cassandra</code> module, combined with ProFTPD's ability to
+use different <code>mod_sql</code> backend modules for multiple different
+database connections, makes this possible.
 
-* mention token-aware, latency-aware routing
-* mention default retry policy
+<p>
+The <code>mod_sql_cassandra</code> module automatically uses the <a href="https://datastax.github.io/cpp-driver/topics/configuration/#token-aware-routing">token aware</a> <i>and</i> <a href="https://datastax.github.io/cpp-driver/topics/configuration/#latency-aware-routing">latency aware</a> routing policies.  For
+retries, the module uses the <a href="https://datastax.github.io/cpp-driver/topics/configuration/retry_policies/#default-retry-policy">default retry policy</a>.
 
-The one required bit of information is the
+<p>
+<b>Example Configuration</b><br>
+The required information for using <code>mod_sql_cassandra</code> is the
 <a href="mod_sql.html#SQLConnectInfo"><code>SQLConnectInfo</code></a> directive.
-This directive needs to contain the name of the stanza in your
-<code>odbc.ini</code> file which holds the configuration.  Using the example
-<code>odbc.ini</code> files above, you would need the following in your
-<code>proftpd.conf</code>:
+The basic configuration would look something like the following:
 <pre>
   # Tells mod_sql to use mod_sql_cassandra
   SQLBackend cassandra
@@ -202,17 +206,111 @@ This directive needs to contain the name of the stanza in your
   # 'proftpd' keyspace.
   SQLConnectInfo proftpd@127.0.0.1:19042
 
-  # Using multiple IPv4 addresses
-  SQLConnectInfo proftpd@192.168.1.100,192.168.2.100:19042
+  # Using multiple IPv4 addresses, assuming the default port of 9042
+  SQLConnectInfo proftpd@192.168.1.100,192.168.2.100
 
   # Using an IPv6 address
-  SQLConnectInfo proftpd@[::1]:19042
+  SQLConnectInfo proftpd@[::1]
 
-  # Using multiple IPv6 addresses
+  # Using multiple IPv6 addresses, port 19042
   SQLConnectInfo proftpd@[::ffff:192.168.1.100],[:ffff:192.168.2.100]:19042
+
+  # To enable use of TLS when communicating to a Cassandra cluster, provide
+  # a file containing the CA certificates trusted by mod_sql_cassandra.
+  SQLConnectInfo proftpd@[::ffff:192.168.1.100],[:ffff:192.168.2.100]:19042 cassuser casspass ssl-ca:/etc/ssl/cassandra-ca.pem
 </pre>
 
 <p>
+Cassandra schema, and CQL, are <em>just different enough</em> from normal SQL
+as to make the default <code>mod_sql</code> schema and queries not work with
+Cassandra.  Instead, here are some example schema and configuration to make
+Cassandra work for the normal user authentication use case:
+<pre>
+CREATE KEYSPACE IF NOT EXISTS proftpd
+  WITH REPLICATION = {'class': 'NetworkTopologyStrategy', 'datacenter1': 3 };
+USE proftpd;
+
+-- mod_sql looks up user data both by name, AND by ID.  Thus we follow the
+-- Cassandra pattern of "denormalization", and maintain two tables of the same
+-- user data, indexed by name and by ID, respectively.
+CREATE TABLE IF NOT EXISTS users_by_id (
+  userid TEXT,
+  passwd TEXT,
+  uid BIGINT PRIMARY KEY,
+  gid BIGINT,
+  homedir TEXT,
+  shell TEXT
+);
+
+CREATE TABLE IF NOT EXISTS users_by_name (
+  userid TEXT PRIMARY KEY,
+  passwd TEXT,
+  uid BIGINT,
+  gid BIGINT,
+  homedir TEXT,
+  shell TEXT
+);
+
+-- We tend to look up group entries by IDs AND by names, hence the two tables
+-- with different primary keys.
+CREATE TABLE IF NOT EXISTS groups_by_id (
+  groupname TEXT,
+  gid BIGINT PRIMARY KEY,
+  members TEXT
+);
+
+CREATE TABLE IF NOT EXISTS groups_by_name (
+  groupname TEXT PRIMARY KEY,
+  gid BIGINT,
+  members TEXT
+);
+
+-- For logging
+CREATE TABLE IF NOT EXISTS sessions (
+  timestamp_ms BIGINT PRIMARY KEY,
+  user TEXT,
+  ip_addr TEXT
+);
+</pre>
+
+The <code>mod_sql</code> configuration for using the above Cassandra schema
+would then be:
+<pre>
+  &lt;IfModule mod_sql.c&gt;
+    SQLBackend cassandra
+    SQLConnectInfo proftpd@cassandra.example.com cassuser casspass
+
+    # Cassandra cannot support the following SQLAuthenticate options:
+    #
+    #  groupset
+    #  groupsetfast
+    #  userset
+    #  usersetfast
+    #
+    # Thus you should only ever use the following.
+    SQLAuthenticate users groups
+
+    # Since we have different user tables, indexed/clustered by names vs IDs,
+    # we need to provide custom queries for those tables.
+
+    SQLNamedQuery get-user-by-name SELECT "userid, passwd, uid, gid, homedir, shell FROM users_by_name WHERE userid = '%U'"
+    SQLNamedQuery get-user-by-id SELECT "userid, passwd, uid, gid, homedir, shell FROM users_by_id WHERE uid = %{0}"'
+    SQLNamedQuery get-user-names SELECT "userid FROM users_by_name"
+    SQLNamedQuery get-all-users SELECT "userid, passwd, uid, gid, homedir, shell FROM users_by_name"
+    SQLUserInfo custom:/get-user-by-name/get-user-by-id/get-user-names/get-all-users
+
+    # Similarly, we need to provide custom queries for the different group tables
+    SQLNamedQuery get-group-by-name SELECT "groupname, gid, members FROM groups_by_name WHERE groupname = '%{0}'"
+    SQLNamedQuery get-group-by-id SELECT "groupname, gid, members FROM groups_by_id WHERE gid = %{0}"
+    SQLNamedQuery get-members-by-user SELECT "groupname, gid, members FROM groups_by_name WHERE members = '%{0}' ALLOW FILTERING"
+    SQLGroupInfo custom:/get-group-by-name/get-group-by-id/get-members-by-user
+
+    # Record successful logins
+    SQLNamedQuery session_start FREEFORM "INSERT INTO sessions (user, ip_addr, timestamp_ms) VALUES ('%u', '%L', %{epoch}%{millisecs})"
+    SQLLog PASS session_start
+  &lt;/IfModule&gt;
+</pre>
+
 <hr>
 <font size=2><b><i>
 &copy; Copyright 2017 TJ Saunders<br>
