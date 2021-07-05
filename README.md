@@ -3,13 +3,12 @@ proftpd-mod_sql_cassandra
 
 Status
 ------
-[![Build Status](https://travis-ci.org/Castaglia/proftpd-mod_sql_cassandra.svg?branch=master)](https://travis-ci.org/Castaglia/proftpd-mod_sql_cassandra)
+[![GitHub Actions CI Status](https://github.com/Castaglia/proftpd-mod_sql_cassandra/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Castaglia/proftpd-mod_sql_cassandra/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-GPL-brightgreen.svg)](https://img.shields.io/badge/license-GPL-brightgreen.svg)
 
 
 Synopsis
 --------
-
 The `mod_sql_cassandra` module for ProFTPD provides the ability to
 store/retrieve data from a [Cassandra](http://cassandra.apache.org/) cluster
 via the [`mod_sql`](http://www.proftpd.org/docs/contrib/mod_sql.html) module.
