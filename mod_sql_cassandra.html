@@ -39,6 +39,7 @@ questions, concerns, or suggestions regarding this module.
 <ul>
   <li><a href="#SQLCassandraConsistency">SQLCassandraConsistency</a>
   <li><a href="#SQLCassandraOptions">SQLCassandraOptions</a>
+  <li><a href="#SQLCassandraProtocolVersion">SQLCassandraProtocolVersion</a>
   <li><a href="#SQLCassandraTimeoutConnect">SQLCassandraTimeoutConnect</a>
   <li><a href="#SQLCassandraTimeoutRequest">SQLCassandraTimeoutRequest</a>
 </ul>
@@ -108,6 +109,26 @@ The currently implemented options are:
     this option.
   </li>
 </ul>
+
+<hr>
+<h3><a name="SQLCassandraProtocolVersion">SQLCassandraProtocolVersion</a></h3>
+<strong>Syntax:</strong> SQLCassandraProtocolVersion <em>version</em><br>
+<strong>Default:</strong> None<br>
+<strong>Context:</strong> server config, <code>&lt;VirtualHost&gt;</code>, <code>&lt;Global&gt;</code><br>
+<strong>Module:</strong> mod_sql_cassandra<br>
+<strong>Compatibility:</strong> 1.3.6rc2 and later
+
+<p>
+The <code>SQLCassandraProtocolVersion</code> directive explicitly configures
+the protocol version to use when communicating with the Cassandra cluster.
+By default, the <code>cpp-driver</code> library automatically selects its
+highest protocol version, and downgrades if necessary.
+
+<p>
+Example configuration:
+<pre>
+  SQLCassandraProtocolVersion 4
+</pre>
 
 <hr>
 <h3><a name="SQLCassandraTimeoutConnect">SQLCassandraTimeoutConnect</a></h3>
@@ -313,7 +334,7 @@ would then be:
 
 <hr>
 <font size=2><b><i>
-&copy; Copyright 2017 TJ Saunders<br>
+&copy; Copyright 2017-2022 TJ Saunders<br>
  All Rights Reserved<br>
 </i></b></font>
 <hr>
