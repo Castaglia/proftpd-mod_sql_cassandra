@@ -29,13 +29,10 @@ my $TESTS = {
 
   sql_cassandra_using_tls => {
     order => ++$order,
-    test_class => [qw(forking)],
+    test_class => [qw(forking inprogress)],
   },
 
 };
-
-# This IP address is used by the local Cassandra Vagrant VM
-my $CASSANDRA_HOST = '192.168.21.21';
 
 sub new {
   return shift()->SUPER::new(@_);
@@ -45,10 +42,23 @@ sub list_tests {
   return testsuite_get_runnable_tests($TESTS);
 }
 
+sub get_cassandra_host {
+  # This IP address is used by the my local Cassandra Vagrant VM
+  my $cassandra_host = '192.168.21.21';
+
+  if (defined($ENV{CASSANDRA_HOST})) {
+    $cassandra_host = $ENV{CASSANDRA_HOST};
+  }
+
+  return $cassandra_host;
+}
+
 sub sql_cassandra_login {
   my $self = shift;
   my $tmpdir = $self->{tmpdir};
   my $setup = test_setup($tmpdir, 'cassandra');
+
+  my $cassandra_host = get_cassandra_host();
 
   my $config = {
     PidFile => $setup->{pid_file},
@@ -65,7 +75,7 @@ sub sql_cassandra_login {
       'mod_sql.c' => [
         'SQLAuthTypes plaintext',
         'SQLBackend cassandra',
-        "SQLConnectInfo proftpd\@$CASSANDRA_HOST proftpd developer",
+        "SQLConnectInfo proftpd\@$cassandra_host proftpd developer",
         "SQLLogFile $setup->{log_file}",
         'SQLMinID 0',
 
@@ -107,6 +117,9 @@ sub sql_cassandra_login {
   defined(my $pid = fork()) or die("Can't fork: $!");
   if ($pid) {
     eval {
+      # Allow for server startup
+      sleep(1);
+
       my $client = ProFTPD::TestSuite::FTP->new('127.0.0.1', $port);
       $client->login($setup->{user}, $setup->{passwd});
 
@@ -154,6 +167,8 @@ sub sql_cassandra_sqllog {
   my $tmpdir = $self->{tmpdir};
   my $setup = test_setup($tmpdir, 'cassandra');
 
+  my $cassandra_host = get_cassandra_host();
+
   my $config = {
     PidFile => $setup->{pid_file},
     ScoreboardFile => $setup->{scoreboard_file},
@@ -169,7 +184,7 @@ sub sql_cassandra_sqllog {
       'mod_sql.c' => [
         'SQLAuthTypes plaintext',
         'SQLBackend cassandra',
-        "SQLConnectInfo proftpd\@$CASSANDRA_HOST proftpd developer",
+        "SQLConnectInfo proftpd\@$cassandra_host proftpd developer",
         "SQLLogFile $setup->{log_file}",
         'SQLMinID 0',
 
@@ -214,6 +229,9 @@ sub sql_cassandra_sqllog {
   defined(my $pid = fork()) or die("Can't fork: $!");
   if ($pid) {
     eval {
+      # Allow for server startup
+      sleep(1);
+
       my $client = ProFTPD::TestSuite::FTP->new('127.0.0.1', $port);
       $client->login($setup->{user}, $setup->{passwd});
 
@@ -263,6 +281,8 @@ sub sql_cassandra_using_tls {
 
   my $ca_file = File::Spec->rel2abs('t/etc/modules/mod_sql_cassandra/cassandra.pem');
 
+  my $cassandra_host = get_cassandra_host();
+
   my $config = {
     PidFile => $setup->{pid_file},
     ScoreboardFile => $setup->{scoreboard_file},
@@ -278,7 +298,7 @@ sub sql_cassandra_using_tls {
       'mod_sql.c' => [
         'SQLAuthTypes plaintext',
         'SQLBackend cassandra',
-        "SQLConnectInfo proftpd\@$CASSANDRA_HOST proftpd developer ssl-ca:$ca_file",
+        "SQLConnectInfo proftpd\@$cassandra_host proftpd developer ssl-ca:$ca_file",
         "SQLLogFile $setup->{log_file}",
         'SQLMinID 0',
 
@@ -320,6 +340,9 @@ sub sql_cassandra_using_tls {
   defined(my $pid = fork()) or die("Can't fork: $!");
   if ($pid) {
     eval {
+      # Allow for server startup
+      sleep(1);
+
       my $client = ProFTPD::TestSuite::FTP->new('127.0.0.1', $port);
       $client->login($setup->{user}, $setup->{passwd});
 
