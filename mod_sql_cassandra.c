@@ -1,6 +1,6 @@
 /*
  * ProFTPD: mod_sql_cassandra -- Support for connecting to Cassandra databases
- * Copyright (c) 2017 TJ Saunders
+ * Copyright (c) 2017-2022 TJ Saunders
  *  
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@
  * $Libraries: -lcassandra$
  */
 
-#define MOD_SQL_CASSANDRA_VERSION		"mod_sql_cassandra/0.0"
+#define MOD_SQL_CASSANDRA_VERSION		"mod_sql_cassandra/0.1"
 
 #include "conf.h"
 #include "privs.h"
@@ -375,6 +375,7 @@ static int cassandra_ssl_load_client_key(pool *p, CassSsl *ssl,
 }
 
 static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
+  config_rec *c;
   CassCluster *cluster;
   CassRetryPolicy *default_policy, *logging_policy;
 
@@ -402,6 +403,17 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
   if (!(cassandra_opts & CASSANDRA_OPT_NO_CLIENT_SIDE_TIMESTAMPS)) {
     conn->timestamps = cass_timestamp_gen_monotonic_new();
     cass_cluster_set_timestamp_gen(cluster, conn->timestamps);
+  }
+
+  c = find_config(main_server->conf, CONF_PARAM, "SQLCassandraProtocolVersion",
+    FALSE);
+  if (c != NULL) {
+    int protocol_version;
+
+    protocol_version = *((int *) c->argv[0]);
+    pr_trace_msg(trace_channel, 7, "setting protocol version %d",
+      protocol_version);
+    cass_cluster_set_protocol_version(cluster, protocol_version);
   }
 
   if (conn->user != NULL) {
@@ -659,11 +671,11 @@ static int cassandra_log_keyspaces(db_conn_t *conn) {
     while (cass_iterator_next(iter)) {
       const CassRow *row;
       const CassValue *val;
-      const char *text = NULL;
       size_t text_len = 0;
 
       pr_signals_handle();
 
+      text = NULL;
       row = cass_iterator_get_row(iter);
       val = cass_row_get_column(row, 0);
       cass_value_get_string(val, &text, &text_len);
@@ -756,9 +768,11 @@ static int exec_stmt(cmd_rec *cmd, db_conn_t *conn, char *text, char **errstr) {
     for (i = 0; i < ncols; i++) {
       const CassValue *val;
       CassValueType val_type;
-      char *text = NULL;
       size_t textsz = 0;
 
+      pr_signals_handle();
+
+      text = NULL;
       val = cass_row_get_column(row, i);
       val_type = cass_value_type(val);
       switch (val_type) {
@@ -1869,6 +1883,66 @@ MODRET set_sqlcassandraoptions(cmd_rec *cmd) {
   return PR_HANDLED(cmd);
 }
 
+/* usage: SQLCassandraProtocolVersion version */
+MODRET set_sqlcassandraprotocolversion(cmd_rec *cmd) {
+  config_rec *c = NULL;
+  const char *protocol_text = NULL;
+  int protocol_version = 0;
+
+  if (cmd->argc-1 != 1) {
+    CONF_ERROR(cmd, "wrong number of parameters");
+  }
+
+  CHECK_CONF(cmd, CONF_ROOT|CONF_VIRTUAL|CONF_GLOBAL);
+
+  c = add_config_param(cmd->argv[0], 1, NULL);
+
+  protocol_text = cmd->argv[1];
+
+  /* The <cassandra.h> file has changed, over time, with regard to how it
+   * expresses/codifies these protocol versions, from ints to an enum.
+   *
+   * The actual function signature uses an int, so we'll skip any enum
+   * detection via Autoconf, and instead just use ints ourselves.  Fortunately,
+   * the driver is smart enough to automagically downgrade to the necessary
+   * supported protocol version, if needed.
+   */
+
+  if (strcasecmp(protocol_text, "default") == 0) {
+    protocol_version = 4;
+
+  } else if (strcasecmp(protocol_text, "1") == 0 ||
+             strcasecmp(protocol_text, "v1") == 0) {
+    protocol_version = 1;
+
+  } else if (strcasecmp(protocol_text, "2") == 0 ||
+             strcasecmp(protocol_text, "v2") == 0) {
+    protocol_version = 2;
+
+  } else if (strcasecmp(protocol_text, "3") == 0 ||
+             strcasecmp(protocol_text, "v3") == 0) {
+    protocol_version = 3;
+
+  } else if (strcasecmp(protocol_text, "4") == 0 ||
+             strcasecmp(protocol_text, "v4") == 0) {
+    protocol_version = 4;
+
+  } else if (strcasecmp(protocol_text, "5") == 0 ||
+             strcasecmp(protocol_text, "v5") == 0) {
+    protocol_version = 5;
+
+  } else {
+    CONF_ERROR(cmd, pstrcat(cmd->tmp_pool,
+      ": unsupported SQLCassandraProtocolVersion '", protocol_text, "'", NULL));
+  }
+
+
+  c->argv[0] = pcalloc(c->pool, sizeof(int));
+  *((int *) c->argv[0]) = protocol_version;
+
+  return PR_HANDLED(cmd);
+}
+
 /* usage: SQLCassandraTimeoutConnect/Request ms */
 MODRET set_sqlcassandratimeout(cmd_rec *cmd) {
   config_rec *c = NULL;
@@ -1977,6 +2051,7 @@ static int sql_cassandra_sess_init(void) {
 static conftable sql_cassandra_conftab[] = {
   { "SQLCassandraConsistency",	set_sqlcassandraconsistency,	NULL },
   { "SQLCassandraOptions",	set_sqlcassandraoptions,	NULL },
+  { "SQLCassandraProtocolVersion", set_sqlcassandraprotocolversion, NULL },
   { "SQLCassandraTimeoutConnect", set_sqlcassandratimeout,	NULL },
   { "SQLCassandraTimeoutRequest", set_sqlcassandratimeout,	NULL },
 
