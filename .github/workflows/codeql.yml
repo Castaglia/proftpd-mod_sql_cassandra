@@ -1,0 +1,90 @@
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - '**/*.md'
+  schedule:
+    - cron: "12 12 * * 4"
+
+jobs:
+  analyze:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: true
+      matrix:
+        language:
+          - cpp
+
+    steps:
+      - name: Checkout ProFTPD
+        uses: actions/checkout@v3
+        with:
+          repository: proftpd/proftpd
+
+      - name: Checkout mod_sql_cassandra
+        uses: actions/checkout@v3
+        with:
+          path: proftpd-mod_sql_cassandra
+
+      - name: Prepare module
+        run: |
+          cp proftpd-mod_sql_cassandra/mod_sql_cassandra.c contrib/mod_sql_cassandra.c
+
+      - name: Install Packages
+        env:
+          CPP_DRIVER_VERSION: 2.16.0
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl libssl-dev libkrb5-dev libuv1-dev zlib1g
+          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver_$CPP_DRIVER_VERSION-1_amd64.deb
+          # Note that we need to use `--force-all` for these, due to the
+          # fact that Ubuntu 20.04 and later removed multiarch support, and
+          # the Debian packaging for `cpp-driver` still references that; see
+          # https://datastax-oss.atlassian.net/browse/CPP-948
+          sudo dpkg --force-all -i cassandra-cpp-driver_$CPP_DRIVER_VERSION-1_amd64.deb
+          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver-dev_$CPP_DRIVER_VERSION-1_amd64.deb
+          sudo dpkg --force-all -i cassandra-cpp-driver-dev_$CPP_DRIVER_VERSION-1_amd64.deb
+
+      - name: Configure
+        run: |
+          ./configure --with-modules=mod_sql:mod_sql_cassandra
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ${{ matrix.language }}
+          config-file: proftpd-mod_sql_cassandra/.codeql.yml
+          queries: +security-and-quality
+          source-root: proftpd-mod_sql_cassandra
+
+      - name: Build
+        run: |
+          make
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "/language:${{ matrix.language }}"
+          checkout_path: proftpd-mod_sql_cassandra
+          output: sarif-results
+          upload: false
+
+      - name: Upload CodeQL SARIF
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          checkout_path: proftpd-mod_sql_cassandra
+          sarif_file: "sarif-results/${{ matrix.language }}.sarif"
