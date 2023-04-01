@@ -1,7 +1,7 @@
 /*
  * ProFTPD: mod_sql_cassandra -- Support for connecting to Cassandra databases
  * Copyright (c) 2017-2022 TJ Saunders
- *  
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -148,7 +148,7 @@ static void *cassandra_add_conn(pool *p, char *name, db_conn_t *conn) {
 
 static int cassandra_timer_cb(CALLBACK_FRAME) {
   register unsigned int i = 0;
- 
+
   for (i = 0; i < conn_cache->nelts; i++) {
     conn_entry_t *entry;
 
@@ -255,7 +255,7 @@ static char *load_file(pool *p, const char *path, long *len) {
     return NULL;
   }
 
-  file_datasz = (long) st.st_size; 
+  file_datasz = (long) st.st_size;
   file_data = palloc(p, file_datasz);
 
   nread = fread(file_data, sizeof(char), file_datasz, fh);
@@ -895,7 +895,7 @@ MODRET sql_cassandra_open(cmd_rec *cmd) {
   if (cmd->argc < 1) {
     sql_log(DEBUG_FUNC, "%s", "exiting \tcassandra cmd_open");
     return PR_ERROR_MSG(cmd, MOD_SQL_CASSANDRA_VERSION, "badly formed request");
-  }    
+  }
 
   /* Get the named connection. */
   entry = cassandra_get_conn(cmd->argv[0]);
@@ -903,7 +903,7 @@ MODRET sql_cassandra_open(cmd_rec *cmd) {
     sql_log(DEBUG_FUNC, "%s", "exiting \tcassandra cmd_open");
     return PR_ERROR_MSG(cmd, MOD_SQL_CASSANDRA_VERSION,
       "unknown named connection");
-  } 
+  }
 
   conn = (db_conn_t *) entry->data;
 
@@ -1038,7 +1038,7 @@ MODRET sql_cassandra_close(cmd_rec *cmd) {
   sql_log(DEBUG_INFO, "'%s' connection count is now %u", entry->name,
     entry->nconn);
   sql_log(DEBUG_FUNC, "%s", "exiting \tcassandra cmd_close");
-  
+
   return PR_HANDLED(cmd);
 }
 
@@ -1055,7 +1055,7 @@ MODRET sql_cassandra_define_conn(cmd_rec *cmd) {
   char *name = NULL, *info = NULL, *seed_list = NULL, *ptr, *ptr2, *ptr3;
   const char *ssl_cert_file = NULL, *ssl_key_file = NULL, *ssl_ca_file = NULL;
   conn_entry_t *entry = NULL;
-  db_conn_t *conn = NULL; 
+  db_conn_t *conn = NULL;
   array_header *seeds = NULL;
 
   sql_log(DEBUG_FUNC, "%s", "entering \tcassandra cmd_defineconnection");
@@ -1295,7 +1295,7 @@ MODRET sql_cassandra_select(cmd_rec *cmd) {
     return PR_ERROR_MSG(cmd, MOD_SQL_CASSANDRA_VERSION,
       "unknown named connection");
   }
- 
+
   conn = (db_conn_t *) entry->data;
 
   mr = sql_cassandra_open(cmd);
@@ -1321,11 +1321,11 @@ MODRET sql_cassandra_select(cmd_rec *cmd) {
       register unsigned int i = 0;
 
       /* Handle the optional arguments -- they're rare, so in this case
-       * we'll play with the already constructed query string, but in 
-       * general we should probably take optional arguments into account 
+       * we'll play with the already constructed query string, but in
+       * general we should probably take optional arguments into account
        * and put the query string together later once we know what they are.
        */
-    
+
       for (i = 5; i < cmd->argc; i++) {
 	if (cmd->argv[i] &&
             strcasecmp("DISTINCT", cmd->argv[i]) == 0)
@@ -1353,7 +1353,7 @@ MODRET sql_cassandra_select(cmd_rec *cmd) {
   }
 
   mr = cassandra_get_data(cmd);
-  
+
   /* Close the connection, return the data. */
   close_cmd = pr_cmd_alloc(cmd->tmp_pool, 1, entry->name);
   sql_cassandra_close(close_cmd);
@@ -1587,7 +1587,7 @@ MODRET sql_cassandra_query(cmd_rec *cmd) {
   }
 
   mr = cassandra_get_data(cmd);
-  
+
   /* Close the connection, return the data. */
   close_cmd = pr_cmd_alloc(cmd->tmp_pool, 1, entry->name);
   sql_cassandra_close(close_cmd);
@@ -1721,7 +1721,7 @@ MODRET sql_cassandra_identify(cmd_rec *cmd) {
   sd->data[1] = MOD_SQL_API_V1;
 
   return mod_create_data(cmd, (void *) sd);
-}  
+}
 
 static cmdtable sql_cassandra_cmdtable[] = {
   { CMD, "sql_checkauth",	G_NONE, sql_cassandra_checkauth, FALSE, FALSE },
@@ -1979,7 +1979,7 @@ static int sql_cassandra_init(void) {
       ": using datastax-cpp %u.%u.%u", (unsigned int) CASS_VERSION_MAJOR,
       (unsigned int) CASS_VERSION_MINOR, (unsigned int) CASS_VERSION_PATCH);
 
-  } else { 
+  } else {
     pr_log_debug(DEBUG3, MOD_SQL_CASSANDRA_VERSION
       ": using datastax-cpp %u.%u.%u%s", (unsigned int) CASS_VERSION_MAJOR,
       (unsigned int) CASS_VERSION_MINOR, (unsigned int) CASS_VERSION_PATCH,
