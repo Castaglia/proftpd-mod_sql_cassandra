@@ -83,7 +83,7 @@ jobs:
 
       - name: Install RPM packages
         env:
-          CPP_DRIVER_VERSION: 2.16.0
+          CPP_DRIVER_VERSION: 2.17.0
         if: ${{ matrix.container == 'almalinux:8' }}
         run: |
           # Need to add other repos for e.g. libsodium
@@ -94,7 +94,7 @@ jobs:
           yum install -y check-devel https://cbs.centos.org/kojifiles/packages/subunit/1.4.0/1.el8/x86_64/subunit-1.4.0-1.el8.x86_64.rpm https://cbs.centos.org/kojifiles/packages/subunit/1.4.0/1.el8/x86_64/subunit-devel-1.4.0-1.el8.x86_64.rpm
 
           # for Cassandra support; see
-          #  https://docs.datastax.com/en/developer/cpp-driver/2.16/topics/installation/
+          #  https://docs.datastax.com/en/developer/cpp-driver/2.17/topics/installation/
           yum install -y openssl-devel krb5-devel zlib-devel libuv
           yum install -y https://downloads.datastax.com/cpp-driver/centos/8/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver-$CPP_DRIVER_VERSION-1.el8.x86_64.rpm
           yum install -y https://downloads.datastax.com/cpp-driver/centos/8/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver-devel-$CPP_DRIVER_VERSION-1.el8.x86_64.rpm
@@ -105,7 +105,7 @@ jobs:
 
       - name: Install Ubuntu packages
         env:
-          CPP_DRIVER_VERSION: 2.16.0
+          CPP_DRIVER_VERSION: 2.17.0
           DEBIAN_FRONTEND: noninteractive
           LIBUV_VERSION: 1.35.0
           TZ: UTC
@@ -118,13 +118,11 @@ jobs:
           apt-get install -y check libsubunit-dev
 
           # for Cassandra support; see
-          #  https://docs.datastax.com/en/developer/cpp-driver/2.16/topics/installation/
-          apt-get install -y curl libssl-dev libkrb5-dev zlib1g
-          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/18.04/dependencies/libuv/v$LIBUV_VERSION/libuv1_$LIBUV_VERSION-1_amd64.deb
-          dpkg -i libuv1_$LIBUV_VERSION-1_amd64.deb
-          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver_$CPP_DRIVER_VERSION-1_amd64.deb
+          #  https://docs.datastax.com/en/developer/cpp-driver/2.17/topics/installation/
+          apt-get install -y curl libssl-dev libkrb5-dev libuv1-dev zlib1g
+          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/22.04/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver_$CPP_DRIVER_VERSION-1_amd64.deb
           dpkg -i cassandra-cpp-driver_$CPP_DRIVER_VERSION-1_amd64.deb
-          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver-dev_$CPP_DRIVER_VERSION-1_amd64.deb
+          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/22.04/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver-dev_$CPP_DRIVER_VERSION-1_amd64.deb
           dpkg -i cassandra-cpp-driver-dev_$CPP_DRIVER_VERSION-1_amd64.deb
 
           # for integration/regression test

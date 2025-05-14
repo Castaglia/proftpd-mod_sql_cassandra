@@ -46,11 +46,11 @@ jobs:
 
       - name: Install Packages
         env:
-          CPP_DRIVER_VERSION: 2.16.0
+          CPP_DRIVER_VERSION: 2.17.0
         run: |
           sudo apt-get update
           sudo apt-get install -y curl libssl-dev libkrb5-dev libuv1-dev zlib1g
-          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver_$CPP_DRIVER_VERSION-1_amd64.deb
+          curl -sLO https://downloads.datastax.com/cpp-driver/ubuntu/22.04/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver_$CPP_DRIVER_VERSION-1_amd64.deb
           # Note that we need to use `--force-all` for these, due to the
           # fact that Ubuntu 20.04 and later removed multiarch support, and
           # the Debian packaging for `cpp-driver` still references that; see
