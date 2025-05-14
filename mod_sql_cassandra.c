@@ -1,6 +1,6 @@
 /*
  * ProFTPD: mod_sql_cassandra -- Support for connecting to Cassandra databases
- * Copyright (c) 2017-2022 TJ Saunders
+ * Copyright (c) 2017-2025 TJ Saunders
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -392,9 +392,6 @@ static int cassandra_cluster_init(pool *p, db_conn_t *conn) {
   /* Enable TCP keepalives. */
   cass_cluster_set_tcp_keepalive(cluster, cass_true,
     CASSANDRA_TCP_KEEPALIVE_DELAY_SECS);
-
-  /* Disable hostname resolution (reverse IP address lookups). */
-  cass_cluster_set_use_hostname_resolution(cluster, cass_false);
 
   /* Timeouts */
   cass_cluster_set_connect_timeout(cluster, cassandra_connect_timeout);
