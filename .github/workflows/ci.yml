@@ -96,8 +96,8 @@ jobs:
           # for Cassandra support; see
           #  https://docs.datastax.com/en/developer/cpp-driver/2.17/topics/installation/
           yum install -y openssl-devel krb5-devel zlib-devel libuv
-          yum install -y https://downloads.datastax.com/cpp-driver/centos/8/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver-$CPP_DRIVER_VERSION-1.el8.x86_64.rpm
-          yum install -y https://downloads.datastax.com/cpp-driver/centos/8/cassandra/v$CPP_DRIVER_VERSION/cassandra-cpp-driver-devel-$CPP_DRIVER_VERSION-1.el8.x86_64.rpm
+          yum install -y https://datastax.jfrog.io/artifactory/cpp-php-drivers/cpp-driver/builds/2.17.1/e05897d/rocky/8.8/cassandra/v2.17.1/cassandra-cpp-driver-2.17.1-1.el8.x86_64.rpm
+          yum install -y https://datastax.jfrog.io/artifactory/cpp-php-drivers/cpp-driver/builds/2.17.1/e05897d/rocky/8.8/cassandra/v2.17.1/cassandra-cpp-driver-devel-2.17.1-1.el8.x86_64.rpm
 
           # for debugging
           clang --version
