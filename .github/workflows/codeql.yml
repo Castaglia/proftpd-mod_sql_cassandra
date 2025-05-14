@@ -64,7 +64,7 @@ jobs:
           ./configure --with-modules=mod_sql:mod_sql_cassandra
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           config-file: proftpd-mod_sql_cassandra/.codeql.yml
@@ -76,7 +76,7 @@ jobs:
           make
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
           checkout_path: proftpd-mod_sql_cassandra
@@ -84,7 +84,7 @@ jobs:
           upload: false
 
       - name: Upload CodeQL SARIF
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           checkout_path: proftpd-mod_sql_cassandra
           sarif_file: "sarif-results/${{ matrix.language }}.sarif"
