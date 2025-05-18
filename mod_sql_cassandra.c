@@ -1066,11 +1066,11 @@ MODRET sql_cassandra_define_conn(cmd_rec *cmd) {
 
   if (conn_pool == NULL) {
     pr_log_pri(PR_LOG_WARNING, "WARNING: the mod_sql_cassandra module has not "
-      "been properly intialized.  Please make sure your --with-modules "
+      "been properly initialized.  Please make sure your --with-modules "
       "configure option lists mod_sql BEFORE mod_sql_cassandra, and recompile");
 
     sql_log(DEBUG_FUNC, "%s", "The mod_sql_cassandra module has not been "
-      "properly intialized.  Please make sure your --with-modules configure "
+      "properly initialized.  Please make sure your --with-modules configure "
       "option lists mod_sql BEFORE mod_sql_cassandra, and recompile");
     sql_log(DEBUG_FUNC, "%s", "exiting \tcassandra cmd_defineconnection");
 
