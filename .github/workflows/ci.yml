@@ -17,7 +17,7 @@ jobs:
     services:
       cassandra:
         # Docker Hub image
-        image: bitnami/cassandra:4.0
+        image: bitnamilegacy/cassandra:4.0
         env:
           CASSANDRA_HOST: cassandra
 
