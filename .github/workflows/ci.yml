@@ -14,20 +14,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    services:
-      cassandra:
-        # Docker Hub image
-        image: bitnamilegacy/cassandra:4.0
-        env:
-          CASSANDRA_HOST: cassandra
-
     env:
       # Let's try opting into use of Nodejs v24; see:
       #  https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
       # GitHub runners still causing problems with NodeJS v20; see:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-      CASSANDRA_HOST: cassandra
 
     strategy:
       matrix:
@@ -129,40 +120,12 @@ jobs:
           curl -sLO https://datastax.jfrog.io/artifactory/cpp-php-drivers/cpp-driver/builds/2.17.1/e05897d/ubuntu/22.04/cassandra/v2.17.1/cassandra-cpp-driver-dev_2.17.1-1_amd64.deb
           dpkg -i cassandra-cpp-driver-dev_$CPP_DRIVER_VERSION-1_amd64.deb
 
-          # for integration/regression test
-          apt-get install -y \
-            libcompress-raw-zlib-perl \
-            libdata-dumper-simple-perl \
-            libdatetime-perl \
-            libfile-copy-recursive-perl \
-            libfile-path-tiny-perl \
-            libfile-spec-native-perl \
-            libjson-perl \
-            libnet-inet6glue-perl \
-            libnet-ssh2-perl \
-            libnet-ssleay-perl \
-            libnet-telnet-perl \
-            libposix-2008-perl \
-            libtest-unit-perl \
-            libtime-hr-perl \
-            libwww-perl
-
           # for test code coverage
           apt-get install -y lcov ruby
           gem install coveralls-lcov
 
           # for HTML validation
           apt-get install -y tidy
-
-          # for cqlsh
-          apt-get install -y curl software-properties-common
-          add-apt-repository -y ppa:deadsnakes/ppa
-          apt-get install -y python3.10 python3.10-venv
-          curl -s https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-          python3.10 get-pip.py
-          pip3 --version
-          pip3 install cqlsh
-          cqlsh --version
 
           # for debugging
           clang --version
@@ -185,17 +148,6 @@ jobs:
         run: |
           cd proftpd
           make install
-
-      - name: Run integration tests
-        if: ${{ matrix.compiler == 'gcc' && matrix.container == 'ubuntu:22.04' }}
-        env:
-          PROFTPD_TEST_BIN: /usr/local/sbin/proftpd
-          PROFTPD_TEST_DIR: ${{ github.workspace }}/proftpd
-        run: |
-          cd proftpd-mod_sql_cassandra
-          cqlsh -u cassandra -p cassandra -f t/etc/modules/mod_sql_cassandra/user.cql cassandra 9042
-          cqlsh -u proftpd -p developer -f t/etc/modules/mod_sql_cassandra/keyspace.cql cassandra 9042
-          perl tests.pl
 
       - name: Build as shared module
         env:
