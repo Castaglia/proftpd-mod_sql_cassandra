@@ -26,7 +26,10 @@ jobs:
           - clang
           - gcc
         container:
-          - almalinux:10
+          # NOTE: While updating to newer AlmaLinux versions is tempting,
+          # the available cassandra-cpp-driver package requires OpenSSL-1.1.x,
+          # and AlmaLinux 9 and later provide OpenSSL-3.x.  Sigh.
+          - almalinux:8
           - alpine:3.18
           - ubuntu:22.04
 
@@ -80,7 +83,7 @@ jobs:
       - name: Install RPM packages
         env:
           CPP_DRIVER_VERSION: 2.17.1
-        if: ${{ matrix.container == 'almalinux:10' }}
+        if: ${{ matrix.container == 'almalinux:8' }}
         run: |
           # Optimize DNF configuration
           tee -a /etc/dnf/dnf.conf <<EOD
@@ -91,10 +94,11 @@ jobs:
 
           # Need to add other repos for e.g. libsodium
           yum install -y dnf-plugins-core epel-release yum-utils clang gcc make zlib-devel
-          crb enable
+          dnf config-manager --enable epel
+          dnf config-manager --set-enabled powertools
 
           # for unit tests
-          yum install -y check-devel subunit subunit-devel
+          yum install -y check-devel https://cbs.centos.org/kojifiles/packages/subunit/1.4.0/1.el8/x86_64/subunit-1.4.0-1.el8.x86_64.rpm https://cbs.centos.org/kojifiles/packages/subunit/1.4.0/1.el8/x86_64/subunit-devel-1.4.0-1.el8.x86_64.rpm
 
           # for Cassandra support; see
           #  https://docs.datastax.com/en/developer/cpp-driver/2.17/topics/installation/
