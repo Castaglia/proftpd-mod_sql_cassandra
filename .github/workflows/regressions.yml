@@ -35,8 +35,6 @@ jobs:
 
     strategy:
       matrix:
-        compiler:
-          - gcc
         container:
           - ubuntu:22.04
 
@@ -54,29 +52,27 @@ jobs:
         with:
           path: proftpd-mod_sql_cassandra
 
+      - name: Checkout Cassandra CPP Driver
+        uses: actions/checkout@v6
+        with:
+          repository: apache/cassandra-cpp-driver
+          path: cassandra-cpp-driver
+
       - name: Install Ubuntu packages
         env:
-          CPP_DRIVER_VERSION: 2.17.1
           DEBIAN_FRONTEND: noninteractive
           TZ: UTC
         run: |
           apt-get update -qq
           # for builds
-          apt-get install -y gcc git make tzdata
+          apt-get install --no-install-recommends -y build-essential cmake gcc g++ git make tzdata
 
           # for Cassandra support; see
           #  https://docs.datastax.com/en/developer/cpp-driver/2.17/topics/installation/
-          apt-get install -y curl libssl-dev libkrb5-dev libuv1-dev zlib1g
-          curl -sLO https://datastax.jfrog.io/artifactory/cpp-php-drivers/cpp-driver/builds/2.17.1/e05897d/ubuntu/22.04/cassandra/v2.17.1/cassandra-cpp-driver_2.17.1-1_amd64.deb
-          dpkg -i cassandra-cpp-driver_$CPP_DRIVER_VERSION-1_amd64.deb
-          curl -sLO https://datastax.jfrog.io/artifactory/cpp-php-drivers/cpp-driver/builds/2.17.1/e05897d/ubuntu/22.04/cassandra/v2.17.1/cassandra-cpp-driver-dev_2.17.1-1_amd64.deb
-          dpkg -i cassandra-cpp-driver-dev_$CPP_DRIVER_VERSION-1_amd64.deb
-
-          # for OpenSSL support
-          apt-get install -y libssl-dev
+          apt-get install --no-install-recommends -y curl libssl-dev libkrb5-dev libuv1-dev zlib1g-dev
 
           # for integration/regression tests
-          apt-get install -y \
+          apt-get install --no-install-recommends -y \
             libauthen-oath-perl \
             libcompress-raw-zlib-perl \
             libdata-dumper-simple-perl \
@@ -109,6 +105,17 @@ jobs:
           # for debugging
           gcc --version
 
+      - name: Install Cassandra CPP Driver
+        run: |
+          cd cassandra-cpp-driver/
+          mkdir build/
+          cd build/
+          cmake ..
+          make
+          make install
+          cd ../../
+          /sbin/ldconfig -v
+
       - name: Prepare module source code
         run: |
           cp proftpd-mod_sql_cassandra/mod_sql_cassandra.c proftpd/contrib/mod_sql_cassandra.c
@@ -119,8 +126,8 @@ jobs:
           cd proftpd
           ./configure --disable-ipv6 --with-modules=mod_sql:mod_sql_cassandra
           make
-          ./proftpd -V
           make install
+          /usr/local/sbin/proftpd -V
 
       - name: Run integration tests
         env:
